@@ -17,7 +17,7 @@ __DATA__
 --- config
 location /t {
     content_by_lua '
-        local rack = require "resty.rack"
+        local rack = require "rack"
         rack.run()
     ';
 }
@@ -30,7 +30,7 @@ GET /t
 --- config
 location /t {
     content_by_lua '
-        local rack = require "resty.rack"
+        local rack = require "rack"
         rack.use(function(req, res)
             res.status = 200
             res.body = "Hello"
@@ -48,7 +48,7 @@ GET /t
 --- config
 location /t {
     content_by_lua '
-        local rack = require "resty.rack"
+        local rack = require "rack"
         rack.use(function(req, res)
             res.status = 304
         end)
@@ -64,7 +64,7 @@ GET /t
 --- config
 location /t {
     content_by_lua '
-        local rack = require "resty.rack"
+        local rack = require "rack"
         local m = {
             call = function(o)
                 return function(req, res, next)

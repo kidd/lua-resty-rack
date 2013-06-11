@@ -17,7 +17,7 @@ __DATA__
 --- config
 location /t {
     content_by_lua '
-        local rack = require "resty.rack"
+        local rack = require "rack"
         local cjson = require "cjson"
         rack.use(function(req, res)
             res.status = 200
@@ -45,7 +45,7 @@ GET /t
 --- config
 location /t {
     content_by_lua '
-        local rack = require "resty.rack"
+        local rack = require "rack"
         local cjson = require "cjson"
         rack.use(function(req, res)
             res.status = 200
@@ -72,7 +72,7 @@ GET /t
 --- config
 location /t {
     content_by_lua '
-        local rack = require "resty.rack"
+        local rack = require "rack"
         local cjson = require "cjson"
         rack.use(function(req, res)
             res.status = 200
@@ -99,7 +99,7 @@ GET /t
 --- config
 location /t {
     content_by_lua '
-        local rack = require "resty.rack"
+        local rack = require "rack"
         local cjson = require "cjson"
         rack.use(function(req, res)
             res.status = 200

@@ -1,15 +1,5 @@
-module("resty.rack", package.seeall)
-
-_VERSION = '0.02'
-
-middleware = {}
-
--- Preload bundled middleware
--- This is at least means the modules only load once, but perhaps some kind
--- of lazy loading method would be better.
-middleware.method_override = require "resty.rack.method_override"
-middleware.read_body = require "resty.rack.read_body"
-
+local rack = {}
+rack._VERSION = '0.02'
 
 -- Register some middleware to be used.
 --
@@ -17,7 +7,7 @@ middleware.read_body = require "resty.rack.read_body"
 -- @param   table   middleware  The middleware module
 -- @param   table   options     Table of options for the middleware.
 -- @return  void
-function use(...)
+function rack.use(...)
     -- Process the args
     local args = {...}
     local route, mw, options = nil, nil, nil
@@ -54,9 +44,53 @@ function use(...)
     end
 end
 
+-- Runs the next middleware in the rack.
+local function next()
+    -- Pick each piece of middleware off in order
+    local mw = table.remove(ngx.ctx.rack.middleware, 1)
+
+    if type(mw) == "function" then
+        local req = ngx.ctx.rack.req
+        local res = ngx.ctx.rack.res
+
+        -- Call the middleware, which may itself call next().
+        -- The first to return is handling the reponse.
+        local post_function = mw(req, res, next)
+
+        if not ngx.headers_sent then
+            assert(res.status,
+                "Middleware returned with no status. Perhaps you need to call next().")
+
+            -- If we have a 5xx or a 3/4xx and no body entity, exit allowing nginx config
+            -- to generate a response.
+            if res.status >= 500 or (res.status >= 300 and res.body == nil) then
+                ngx.exit(res.status)
+            end
+
+            -- Otherwise send the response as normal.
+            ngx.status = res.status
+            for k,v in pairs(res.header) do
+                ngx.header[k] = v
+            end
+            ngx.print(res.body)
+            ngx.eof()
+        end
+
+        -- Middleware may return a function to call post-EOF.
+        -- This code will only run for persistent connections, and is not really guaranteed
+        -- to run, since browser behaviours differ. Also be aware that long running tasks
+        -- may affect performance by hogging the connection.
+        if post_function and type(post_function == "function") then
+            post_function(req, res)
+        end
+    end
+end
+
+
+
 
 -- Start the rack.
-function run()
+function rack.run()
     -- We need a decent req / res environment to pass around middleware.
     if not ngx.ctx.rack or not ngx.ctx.rack.middleware then
         ngx.log(ngx.ERR, "Attempted to run rack without any middleware.")
@@ -143,52 +177,11 @@ function run()
     next()
 end
 
-
--- Runs the next middleware in the rack.
-function next()
-    -- Pick each piece of middleware off in order
-    local mw = table.remove(ngx.ctx.rack.middleware, 1)
-
-    if type(mw) == "function" then
-        local req = ngx.ctx.rack.req
-        local res = ngx.ctx.rack.res
-
-        -- Call the middleware, which may itself call next().
-        -- The first to return is handling the reponse.
-        local post_function = mw(req, res, next)
-
-        if not ngx.headers_sent then
-            assert(res.status,
-                "Middleware returned with no status. Perhaps you need to call next().")
-
-            -- If we have a 5xx or a 3/4xx and no body entity, exit allowing nginx config
-            -- to generate a response.
-            if res.status >= 500 or (res.status >= 300 and res.body == nil) then
-                ngx.exit(res.status)
-            end
-
-            -- Otherwise send the response as normal.
-            ngx.status = res.status
-            for k,v in pairs(res.header) do
-                ngx.header[k] = v
-            end
-            ngx.print(res.body)
-            ngx.eof()
-        end
-
-        -- Middleware may return a function to call post-EOF.
-        -- This code will only run for persistent connections, and is not really guaranteed
-        -- to run, since browser behaviours differ. Also be aware that long running tasks
-        -- may affect performance by hogging the connection.
-        if post_function and type(post_function == "function") then
-            post_function(req, res)
-        end
-    end
-end
-
-
 -- to prevent use of casual module global variables
-getmetatable(resty.rack).__newindex = function (table, key, val)
-    error('attempt to write to undeclared variable "' .. key .. '": '
-            .. debug.traceback())
-end
+setmetatable(rack,{
+   __newindex = function (table, key, val)
+     error('attempt to write to undeclared variable "' .. key .. '": ' .. debug.traceback())
+   end})
+
+
+return rack
