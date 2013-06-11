@@ -8,7 +8,6 @@ middleware = {}
 -- This is at least means the modules only load once, but perhaps some kind
 -- of lazy loading method would be better.
 middleware.method_override = require "resty.rack.method_override"
-middleware.read_request_headers = require "resty.rack.read_request_headers"
 middleware.read_body = require "resty.rack.read_body"
 
 
@@ -16,7 +15,7 @@ middleware.read_body = require "resty.rack.read_body"
 --
 -- @param   string  route       Optional, dfaults to '/'.
 -- @param   table   middleware  The middleware module
--- @param   table   options     Table of options for the middleware. 
+-- @param   table   options     Table of options for the middleware.
 -- @return  void
 function use(...)
     -- Process the args
@@ -36,10 +35,10 @@ function use(...)
         if string.sub(ngx.var.uri, 1, route:len()) ~= route then return false end
     end
 
-    if not ngx.ctx.rack then 
-        ngx.ctx.rack = { 
-            middleware = {} 
-        } 
+    if not ngx.ctx.rack then
+        ngx.ctx.rack = {
+            middleware = {}
+        }
     end
 
     -- If we have a 'call' function, then we insert the result into our rack
@@ -59,7 +58,7 @@ end
 -- Start the rack.
 function run()
     -- We need a decent req / res environment to pass around middleware.
-    if not ngx.ctx.rack or not ngx.ctx.rack.middleware then 
+    if not ngx.ctx.rack or not ngx.ctx.rack.middleware then
         ngx.log(ngx.ERR, "Attempted to run rack without any middleware.")
         return
     end
@@ -79,8 +78,8 @@ function run()
         header = {},
         body = nil,
     }
-        
-    -- uri_relative = /test?arg=true 
+
+    -- uri_relative = /test?arg=true
     ngx.ctx.rack.req.uri_relative = ngx.var.uri .. ngx.var.is_args .. ngx.ctx.rack.req.query
 
     -- uri_full = http://example.com/test?arg=true
@@ -109,7 +108,7 @@ function run()
 
     req_h_mt.__index = function(t, k)
         k = k:lower():gsub("-", "_")
-        return req_h_mt.normalised[k] or ngx.var["http_" .. k] 
+        return req_h_mt.normalised[k] or ngx.var["http_" .. k]
     end
 
     req_h_mt.__newindex = function(t, k, v)
@@ -154,12 +153,12 @@ function next()
         local req = ngx.ctx.rack.req
         local res = ngx.ctx.rack.res
 
-        -- Call the middleware, which may itself call next(). 
+        -- Call the middleware, which may itself call next().
         -- The first to return is handling the reponse.
         local post_function = mw(req, res, next)
 
         if not ngx.headers_sent then
-            assert(res.status, 
+            assert(res.status,
                 "Middleware returned with no status. Perhaps you need to call next().")
 
             -- If we have a 5xx or a 3/4xx and no body entity, exit allowing nginx config
@@ -193,4 +192,3 @@ getmetatable(resty.rack).__newindex = function (table, key, val)
     error('attempt to write to undeclared variable "' .. key .. '": '
             .. debug.traceback())
 end
-
