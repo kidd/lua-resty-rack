@@ -29,6 +29,44 @@ local function get_middleware_function(mw, options)
   return nil
 end
 
+local function handle_ngx_response_errors(status, body)
+  assert(status, "Middleware returned with no status. Perhaps you need to call next().")
+
+  -- If we have a 5xx or a 3/4xx and no body entity, exit allowing nginx config
+  -- to generate a response.
+  if status >= 500 or (status >= 300 and body == nil) then
+    ngx.exit(status)
+  end
+end
+
+-- Runs the next middleware in the rack.
+local function next_middleware()
+  -- Pick each piece of middleware off in order
+  local mwf = table.remove(ngx.ctx.rack.middlewares, 1)
+
+  local req = ngx.ctx.rack.req
+  local res = ngx.ctx.rack.res
+
+  -- Call the middleware, which may itself call next().
+  -- The first to return is handling the reponse.
+  local post_function = mwf(req, res, next_middleware)
+
+  if not ngx.headers_sent then
+    handle_ngx_response_errors(res.status, res.body)
+
+    for k,v in pairs(res.header) do ngx.header[k] = v end
+    ngx.status = res.status
+    ngx.print(res.body)
+    ngx.eof()
+  end
+
+  -- Middleware may return a callable object to be called post-EOF.
+  -- This code will only run for persistent connections, and is not really guaranteed
+  -- to run, since browser behaviours differ. Also be aware that long running tasks
+  -- may affect performance by hogging the connection.
+  if post_function then post_function(req, res) end
+end
+
 -- Register some middleware to be used.
 --
 -- @param   string  route       Optional, dfaults to '/'.
@@ -48,47 +86,7 @@ function rack.use(...)
   return true
 end
 
--- Runs the next middleware in the rack.
-local function next()
-  -- Pick each piece of middleware off in order
-  local mw = table.remove(ngx.ctx.rack.middlewares, 1)
 
-  if type(mw) == "function" then
-    local req = ngx.ctx.rack.req
-    local res = ngx.ctx.rack.res
-
-    -- Call the middleware, which may itself call next().
-    -- The first to return is handling the reponse.
-    local post_function = mw(req, res, next)
-
-    if not ngx.headers_sent then
-      assert(res.status,
-      "Middleware returned with no status. Perhaps you need to call next().")
-
-      -- If we have a 5xx or a 3/4xx and no body entity, exit allowing nginx config
-      -- to generate a response.
-      if res.status >= 500 or (res.status >= 300 and res.body == nil) then
-        ngx.exit(res.status)
-      end
-
-      -- Otherwise send the response as normal.
-      ngx.status = res.status
-      for k,v in pairs(res.header) do
-        ngx.header[k] = v
-      end
-      ngx.print(res.body)
-      ngx.eof()
-    end
-
-    -- Middleware may return a function to call post-EOF.
-    -- This code will only run for persistent connections, and is not really guaranteed
-    -- to run, since browser behaviours differ. Also be aware that long running tasks
-    -- may affect performance by hogging the connection.
-    if post_function and type(post_function == "function") then
-      post_function(req, res)
-    end
-  end
-end
 
 
 
@@ -178,7 +176,7 @@ function rack.run()
 
   setmetatable(ngx.ctx.rack.res.header, res_h_mt)
 
-  next()
+  next_middleware()
 end
 
 -- to prevent use of casual module global variables
