@@ -61,7 +61,7 @@ Middleware applications are simply Lua modules which use the HTTP request and re
 ```lua
 -- /lib/method_override.lua
 
-local method_override = {}
+local method_override = {
   _VERSION = '0.01',
   call     = function(options)
     return function(req, res, next_middleware)
