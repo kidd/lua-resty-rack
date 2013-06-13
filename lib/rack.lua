@@ -21,6 +21,16 @@ local function get_ngx_middlewares()
   return ngx.ctx.rack.middlewares
 end
 
+-- uri_relative = /test?arg=true
+function get_ngx_uri_relative(query)
+  return ngx.var.uri .. ngx.var.is_args .. query
+end
+
+-- uri_full = http://example.com/test?arg=true
+function get_ngx_uri_full(uri_relative)
+  return ngx.var.scheme .. '://' .. ngx.var.host .. uri_relative
+end
+
 local function get_middleware_function(mw, options)
   -- If we simply have a function, we can add that instead
   if type(mw) == "function" then return mw end
@@ -86,11 +96,6 @@ function rack.use(...)
   return true
 end
 
-
-
-
-
-
 -- Start the rack.
 function rack.run()
   -- We need a decent req / res environment to pass around middleware.
@@ -99,20 +104,27 @@ function rack.run()
     return
   end
 
+  local query         = ngx.var.query_string or ""
+  local uri_relative  = get_ngx_uri_relative(query)
+  local uri_full      = get_ngx_uri_full(uri_relative)
+  local req_fallback  = function(k) return ngx.var["http_" .. k] end
+
   ngx.ctx.rack.req = {
-    method = ngx.var.request_method,
-    scheme = ngx.var.scheme,
-    uri = ngx.var.uri,
-    host = ngx.var.host,
-    query = ngx.var.query_string or "",
-    args = ngx.req.get_uri_args(),
-    header = {},
-    body = "",
+    body          = "",
+    query         = query,
+    uri_full      = uri_full,
+    uri_relative  = uri_relative,
+    method        = ngx.var.request_method,
+    args          = ngx.req.get_uri_args(),
+    scheme        = ngx.var.scheme,
+    uri           = ngx.var.uri,
+    host          = ngx.var.host,
+    header = {}
   }
   ngx.ctx.rack.res = {
-    status = nil,
     header = {},
-    body = nil,
+    status = nil,
+    body = nil
   }
 
   -- uri_relative = /test?arg=true
