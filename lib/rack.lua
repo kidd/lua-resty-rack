@@ -1,5 +1,19 @@
 local rack = {}
+
 rack._VERSION = '0.02'
+
+local function process_rack_use_args(args)
+  local route = table.remove(args, 1)
+  local mw, options
+  if type(route) == "table" or type(route) == "function" then
+    mw = route
+    route = nil
+  else
+    mw = table.remove(args, 1)
+  end
+  options = table.remove(args, 1) or {}
+  return route, mw, options
+end
 
 -- Register some middleware to be used.
 --
@@ -8,17 +22,7 @@ rack._VERSION = '0.02'
 -- @param   table   options     Table of options for the middleware.
 -- @return  void
 function rack.use(...)
-    -- Process the args
-    local args = {...}
-    local route, mw, options = nil, nil, nil
-    route = table.remove(args, 1)
-    if type(route) == "table" or type(route) == "function" then
-        mw = route
-        route = nil
-    else
-        mw = table.remove(args, 1)
-    end
-    options = table.remove(args, 1) or {}
+    local route, mw, options = process_rack_use_args({...})
 
     if route then
         -- Only carry on if we have a route match
