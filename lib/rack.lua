@@ -15,6 +15,20 @@ local function process_rack_use_args(args)
   return route, mw, options
 end
 
+local function get_ngx_middlewares()
+  ngx.ctx.rack             = ngx.ctx.rack or {}
+  ngx.ctx.rack.middlewares = ngx.ctx.rack.middlewares or {}
+  return ngx.ctx.rack.middlewares
+end
+
+local function get_middleware_function(mw, options)
+  -- If we simply have a function, we can add that instead
+  if type(mw) == "function" then return mw end
+  -- If we have a 'call' function, then calling it with options should return a new function with the required params
+  if type(mw) == "table" and type(mw.call) == "function" then return mw.call(options) end
+  return nil
+end
+
 -- Register some middleware to be used.
 --
 -- @param   string  route       Optional, dfaults to '/'.
@@ -22,36 +36,22 @@ end
 -- @param   table   options     Table of options for the middleware.
 -- @return  void
 function rack.use(...)
-    local route, mw, options = process_rack_use_args({...})
+  local route, mw, options = process_rack_use_args({...})
 
-    if route then
-        -- Only carry on if we have a route match
-        if string.sub(ngx.var.uri, 1, route:len()) ~= route then return false end
-    end
+  if route and string.sub(ngx.var.uri, 1, route:len()) ~= route then return false end
 
-    if not ngx.ctx.rack then
-        ngx.ctx.rack = {
-            middleware = {}
-        }
-    end
+  local mwf = get_middleware_function(mw, options)
+  if not mwf then return nil, "Invalid middleware" end
 
-    -- If we have a 'call' function, then we insert the result into our rack
-    if type(mw) == "table" and type(mw.call) == "function" then
-        table.insert(ngx.ctx.rack.middleware, mw.call(options))
-        return true
-    -- Or if we simply have a function, we can add that instead
-    elseif (type(mw) == "function") then
-        table.insert(ngx.ctx.rack.middleware, mw)
-        return true
-    else
-        return nil, "Invalid middleware"
-    end
+  local middlewares = get_ngx_middlewares()
+  table.insert(middlewares, mwf)
+  return true
 end
 
 -- Runs the next middleware in the rack.
 local function next()
     -- Pick each piece of middleware off in order
-    local mw = table.remove(ngx.ctx.rack.middleware, 1)
+    local mw = table.remove(ngx.ctx.rack.middlewares, 1)
 
     if type(mw) == "function" then
         local req = ngx.ctx.rack.req
@@ -96,7 +96,7 @@ end
 -- Start the rack.
 function rack.run()
     -- We need a decent req / res environment to pass around middleware.
-    if not ngx.ctx.rack or not ngx.ctx.rack.middleware then
+    if not ngx.ctx.rack or not ngx.ctx.rack.middlewares then
         ngx.log(ngx.ERR, "Attempted to run rack without any middleware.")
         return
     end
