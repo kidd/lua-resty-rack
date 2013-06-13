@@ -6,7 +6,7 @@ plan tests => 6;
 my $pwd = cwd();
 
 our $HttpConfig = qq{
-	lua_package_path "$pwd/lib/?.lua;;";
+	lua_package_path "$pwd/?.lua;;";
 };
 
 run_tests();

@@ -1,6 +1,6 @@
 local rack = {}
 
-rack._VERSION = '0.02'
+rack._VERSION = '0.1'
 
 local function process_rack_use_args(args)
   local route = table.remove(args, 1)
