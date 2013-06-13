@@ -49,6 +49,31 @@ local function handle_ngx_response_errors(status, body)
   end
 end
 
+local function normalize(str)
+  return str:lower():gsub("-", "_")
+end
+
+-- creates a metatable that, when applied to a table, makes it normalized, which means:
+-- * It lowercases keys, so t.foo and t.FOO return the same
+-- * It replaces dashes by underscores, so t['foo-bar'] returns the same as t.foo_bar
+-- * When fallback is provided, t['inexisting key'] will return fallback('inexisting key')
+-- It is used for immunizing ngx's to browser changes on the headers of requests and responses
+local function create_normalizer_mt(fallback)
+  local normalized = {}
+
+  return {
+    __index = function(t, k)
+      k = normalize(k)
+      return normalized[k] or (fallback and fallback(k))
+    end,
+
+    __newindex = function(t, k, v)
+      rawset(t, k, v)
+      normalized[normalize(k)] = v
+    end
+  }
+end
+
 -- Runs the next middleware in the rack.
 local function next_middleware()
   -- Pick each piece of middleware off in order
@@ -119,83 +144,21 @@ function rack.run()
     scheme        = ngx.var.scheme,
     uri           = ngx.var.uri,
     host          = ngx.var.host,
-    header = {}
+    header        = setmetatable({}, create_normalizer_mt(req_fallback))
   }
+
   ngx.ctx.rack.res = {
-    header = {},
-    status = nil,
-    body = nil
+    status  = nil,
+    body    = nil,
+    header  = setmetatable({}, create_normalizer_mt())
   }
-
-  -- uri_relative = /test?arg=true
-  ngx.ctx.rack.req.uri_relative = ngx.var.uri .. ngx.var.is_args .. ngx.ctx.rack.req.query
-
-  -- uri_full = http://example.com/test?arg=true
-  ngx.ctx.rack.req.uri_full = ngx.var.scheme .. '://' .. ngx.var.host .. ngx.ctx.rack.req.uri_relative
-
-
-  -- Case insensitive request and response headers.
-  --
-  -- ngx_lua has request headers available case insensitively with ngx.var.http_*, but
-  -- these cannot be iternated over or added to (for fake request headers).
-  --
-  -- Response headers are set to ngx.header.*, and can also be set and read case
-  -- insensitively, but they cannot be iterated over.
-  --
-  -- Ideally, we should be able to set/get headers in req.header and res.header case
-  -- insensitively, with optional underscores instead of dashes (for consistency), and
-  -- iterate over them (with the case they were set).
-
-
-  -- For request headers, we must:
-  -- * Keep track of fake request headers in a normalised (lowercased / underscored) state.
-  -- * First try a direct hit, then fall back to the normalised table, and ngx.var.http_*
-  local req_h_mt = {
-    normalised = {}
-  }
-
-  req_h_mt.__index = function(t, k)
-    k = k:lower():gsub("-", "_")
-    return req_h_mt.normalised[k] or ngx.var["http_" .. k]
-  end
-
-  req_h_mt.__newindex = function(t, k, v)
-    rawset(t, k, v)
-
-    k = k:lower():gsub("-", "_")
-    req_h_mt.normalised[k] = v
-  end
-
-  setmetatable(ngx.ctx.rack.req.header, req_h_mt)
-
-
-  -- For response headers, we simply keep things proxied and normalised, to be set
-  -- to ngx.header.* later.
-  local res_h_mt = {
-    normalised = {}
-  }
-
-  res_h_mt.__index = function(t, k)
-    k = k:lower():gsub("-", "_")
-    return res_h_mt.normalised[k]
-  end
-
-  res_h_mt.__newindex = function(t, k, v)
-    rawset(t, k, v)
-    k = k:lower():gsub("-", "_")
-    res_h_mt.normalised[k] = v
-  end
-
-  setmetatable(ngx.ctx.rack.res.header, res_h_mt)
 
   next_middleware()
 end
 
 -- to prevent use of casual module global variables
-setmetatable(rack,{
-  __newindex = function (table, key, val)
-    error('attempt to write to undeclared variable "' .. key .. '": ' .. debug.traceback())
-  end})
+setmetatable(rack, { __newindex = function (table, key, val)
+  error('attempt to write to undeclared variable "' .. key .. '": ' .. debug.traceback())
+end})
 
-
-  return rack
+return rack
