@@ -2,7 +2,7 @@
 
 A simple and extensible HTTP server framework for [OpenResty](http://openresty.org), providing a clean method for loading Lua HTTP applications ("resty" modules) into [Nginx](http://nginx.org).
 
-Drawing inspiration from [Rack](http://rack.github.com/) and also [Connect](https://github.com/senchalabs/connect), **lua-resty-rack** allows you to load your application as a piece of middleware, alongside other middleware. Your application can either; ignore the current request, modify the request or response in some way and pass on to other middleware, or take responsibiliy for the request by generating a response. 
+Drawing inspiration from [Rack](http://rack.github.com/) and also [Connect](https://github.com/senchalabs/connect), **lua-resty-rack** allows you to load your application as a piece of middleware, alongside other middleware. Your application can either; ignore the current request, modify the request or response in some way and pass on to other middleware, or take responsibiliy for the request by generating a response.
 
 ## Status
 
@@ -20,9 +20,8 @@ To install middleware for a given `location`, you simply call `rack.use(middlewa
 server {
     location / {
         content_by_lua '
-            local rack = require "resty.rack"
+            local rack = require "rack"
 
-            rack.use(rack.middleware.method_override)
             rack.use(require "my.module")
             rack.run()
         ';
@@ -55,49 +54,25 @@ end)
 
 Runs each of the middleware in order, until one chooses to handle the response. Thus, the order in which you call `rack.use()` is important.
 
-## Bundled Middleware
-
-### method_override
-```lua
-rack.use(rack.middleware.method_override, { key = "METHOD" })
-```
-
-Override the HTTP method using a querystring value. The default argument name is "_method" but this can be overriden by setting the option "key".
-
-
-### read_request_headers
-```lua
-rack.use(rack.middleware.read_request_headers, { max = 50 })
-```
-
-This is only needed if you wish to iterate over the HTTP request headers. They will be lazy loaded when accessed via `req.header`.
-
-You may specify a limit to the number of request headers to be read, which defaults to `100`. The limit can be removed by specifying a max of `0`, but is [strongly discouraged](http://wiki.nginx.org/HttpLuaModule#ngx.req.get_headers).
-
-### read_body
-```lua
-rack.use(rack.middleware.read_body)
-```
-
-Explicitly reads the request body (raw).
-
-
 ## Creating Middleware
 
 Middleware applications are simply Lua modules which use the HTTP request and response as a minimal interface. They must implement the function `call(options)` which returns a function. The parameters `(req, res, next)` are defined below.
 
 ```lua
-module("resty.rack.method_override", package.seeall)
+-- /lib/method_override.lua
 
-_VERSION = '0.01'
-
-function call(options)
-    return function(req, res, next)
-        local key = options['key'] or '_method'
-        req.method = string.upper(req.args[key] or req.method)
-        next()
+local method_override = {
+  _VERSION = '0.01',
+  call     = function(options)
+    return function(req, res, next_middleware)
+      local key = options['key'] or '_method'
+      req.method = string.upper(req.args[key] or req.method)
+      next_middleware()
     end
-end
+  end
+}
+
+return method_override
 ```
 
 ## API
@@ -121,7 +96,7 @@ The hostname, e.g. `example.com`, set from `ngx.var.host`.
 ### req.query
 
 The querystring, e.g. `var1=1&var2=2`, set from `ngx.var.query_string`.
- 
+
 ### req.args
 
 The query args, as a `table`, set from `ngx.req.get_uri_args()`.
@@ -132,11 +107,8 @@ A table containing the request headers. Keys are matched case insensitvely, and 
 
 ```lua
 req.header["X-Foo"] = "bar"
-res.body = req.header.x_foo
-    --> "bar"
+res.body = req.header.x_foo --> "bar"
 ```
-
-HTTP Request headers are read on demand and so cannot be iterated over unless the `read_request_headers` middleware is in use).
 
 ### req.body
 
@@ -154,39 +126,41 @@ A table of response headers, which can be matched case insensitively and optiona
 
 The response body.
 
-### next
+### next_middleware
 
 This parameter is a function provided to the middleware, which may be called to indicate rack should try the next middleware. If your application does not intend to send the response to the browser, it must call this function. If however your application is taking responsibility for the response, simply return without calling next.
 
 *Example purely modifying the request.*
 ```lua
-function call(options)
-    return function(req, res, next)
-        local key = options['key'] or '_method'
-        req.method = string.upper(req.args[key] or req.method)
-        next()
+  call = function(options)
+    return function(req, res, next_middleware)
+      local key = options['key'] or '_method'
+      req.method = string.upper(req.args[key] or req.method)
+      next_middleware()
     end
-end
+  end
 ```
 
 *Example generating a response.*
 ```lua
-function call(options)
+  call = function(options)
     return function(req, res)
-        res.status = 200
-        res.header['Content-Type'] = "text/plain"
-        res.body = "Hello World"
+      res.status = 200
+      res.header['Content-Type'] = "text/plain"
+      res.body = "Hello World"
     end
-end
+  end
 ```
 
 ### Enhancing req / res
 
-Your application can add new fields or even functions to the req / res tables where appropriate, which could be used by other middleware so long as the dependencies are clear (and one calls `use()` in the correct order). 
+Your application can add new fields or even functions to the req / res tables where appropriate, which could be used by other middleware so long as the dependencies are clear (and one calls `use()` in the correct order).
 
-## Author
+## Authors
 
-James Hurst <james@pintsized.co.uk>
+James Hurst <james - AT - pintsized.co.uk>
+Raimon Grau <raimonster - AT - gmail.com>
+Enrique García <kikito - AT - gmail.com>
 
 ## Licence
 
@@ -199,7 +173,6 @@ All rights reserved.
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 
 * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-
 * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
